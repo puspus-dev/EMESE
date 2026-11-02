@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
       default:
         return json({
           name: "EMESE API",
-          endpoints: ["/stops?q=", "/departures?stop=&limit=", "/last-departed?stop=", "/eta?trip=&date=&stop=&delay_sec="],
+          endpoints: ["/EMESE/Nyiregyhaza/stops?q=", "/EMESE/Nyiregyhaza/departures?stop=&limit=", "/EMESE/Nyiregyhaza/last-departed?stop=", "/EMESE/Nyiregyhaza/eta?trip=&date=&stop=&delay_sec="],
         });
     }
   } catch (e) {
