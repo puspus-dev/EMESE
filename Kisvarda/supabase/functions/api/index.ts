@@ -176,7 +176,7 @@ Deno.serve(async (req) => {
       default:
         return json({
           name: "EMESE API",
-          endpoints: ["/stops?q=", "/departures?stop=&limit=", "/last-departed?stop=", "/eta?trip=&date=&stop=&delay_sec="],
+          endpoints: ["/EMESE/Kisvarda/stops?q=", "/EMESE/Kisvarda/departures?stop=&limit=", "/EMESE/Kisvarda/last-departed?stop=", "/EMESE/Kisvarda/eta?trip=&date=&stop=&delay_sec="],
         });
     }
   } catch (e) {
