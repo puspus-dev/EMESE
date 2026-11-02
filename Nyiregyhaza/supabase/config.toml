@@ -1,0 +1,4 @@
+project_id = "emese-nyiregyhaza"
+
+[functions.api]
+verify_jwt = false
