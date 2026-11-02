@@ -1,0 +1,44 @@
+# Render Blueprint – EMESE API
+# Dashboard: New → Blueprint → ezt a repo-t / emese_render mappát
+# https://render.com/docs/blueprint-spec
+
+databases:
+  - name: emese-db
+    plan: free
+    databaseName: emese
+    user: emese
+
+services:
+  - type: web
+    name: emese-api
+    runtime: python
+    plan: free
+    rootDir: emese_render
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: emese-db
+          property: connectionString
+      - key: EMESE_CITY
+        value: Nyiregyhaza
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+  # Opcionális: napi GTFS frissítés (Render Cron – fizetős/korlátozott free-en)
+  - type: cron
+    name: emese-gtfs-import
+    runtime: python
+    plan: free
+    rootDir: emese_render
+    schedule: "0 4 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/import_gtfs.py --prefix "Nyíregyháza"
+    envVars:
+      - key: SUPABASE_DB_URL
+        fromDatabase:
+          name: emese-db
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: "3.12"
