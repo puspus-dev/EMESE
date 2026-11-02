@@ -1,0 +1,4 @@
+project_id = "emese-kisvarda"
+
+[functions.api]
+verify_jwt = false
