@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 """Volánbusz GTFS -> Supabase Postgres importer.
 
-Csak a megadott megállónév-előtagú megállókat érintő járatokat tölti be (alapból "Kisvárda"),
-hogy az adatbázis kicsi maradjon.
+Csak azokat a járatokat tölti be, amelyek érintenek "Kisvárda" kezdetű nevű megállót,
+hogy az adatbázis kicsi maradjon. A feed címe és az előtag be van égetve a kódba.
 
-Környezeti változók:
-  SUPABASE_DB_URL    Postgres connection string (GitHub Actionsből a *session pooler* címet használd)
-  GTFS_URL           a GTFS zip címe (alapérték: a Volánbusz feed a gtfs.kti.hu-n)   (vagy:)
-  GTFS_FILE          helyi GTFS zip útvonala (ilyenkor nincs változásellenőrzés)
-  FORCE              1 = akkor is importál, ha a feed nem változott
-  STOP_NAME_PREFIX   megállónév-előtag(ok), ';'-vel elválasztva. Alapérték: Kisvárda
+Egyetlen kötelező érték van: a Postgres connection string (jelszóval), ezt nem szabad a
+repóba írni. Megadható a SUPABASE_DB_URL környezeti változóval vagy a --db-url kapcsolóval.
+
+Kapcsolók (mind opcionális):
+  --force          akkor is importál, ha a feed nem változott
+  --file ZIP       helyi GTFS zip használata (nincs változásellenőrzés)
+  --url URL        másik feed-cím (alapból a gtfs.kti.hu Volánbusz feed)
+  --prefix NÉV     másik megállónév-előtag (több is lehet ';'-vel elválasztva)
 """
+import argparse
 import csv
 import hashlib
 import io
@@ -23,11 +26,25 @@ import zipfile
 
 import psycopg
 
-DB_URL = os.environ["SUPABASE_DB_URL"]
-GTFS_URL = os.environ.get("GTFS_URL") or "https://gtfs.kti.hu/public-gtfs/volanbusz_gtfs.zip"
-GTFS_FILE = os.environ.get("GTFS_FILE")
-FORCE = os.environ.get("FORCE") == "1"
-PREFIXES = [p.strip().lower() for p in os.environ.get("STOP_NAME_PREFIX", "Kisvárda").split(";") if p.strip()]
+DEFAULT_URL = "https://gtfs.kti.hu/public-gtfs/volanbusz_gtfs.zip"
+DEFAULT_PREFIX = "Kisvárda"
+
+
+def parse_args():
+    ap = argparse.ArgumentParser(description="Volánbusz GTFS import")
+    ap.add_argument("--db-url", default=os.environ.get("SUPABASE_DB_URL"))
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--file")
+    ap.add_argument("--url", default=DEFAULT_URL)
+    ap.add_argument("--prefix", default=DEFAULT_PREFIX)
+    return ap.parse_args()
+
+
+ARGS = parse_args()
+if not ARGS.db_url:
+    sys.exit("Hiányzik a Postgres connection string: SUPABASE_DB_URL vagy --db-url.")
+DB_URL, GTFS_URL, GTFS_FILE, FORCE = ARGS.db_url, ARGS.url, ARGS.file, ARGS.force
+PREFIXES = [p.strip().lower() for p in ARGS.prefix.split(";") if p.strip()]
 
 
 def get_meta() -> dict:
