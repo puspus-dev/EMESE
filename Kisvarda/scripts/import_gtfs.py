@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Volánbusz GTFS -> Supabase Postgres importer.
 
-Csak azokat a járatokat tölti be, amelyek érintenek "Nyíregyháza" kezdetű nevű megállót,
+Csak azokat a járatokat tölti be, amelyek érintenek "Kisvárda" kezdetű nevű megállót,
 hogy az adatbázis kicsi maradjon. A feed címe és az előtag be van égetve a kódba.
 
 Egyetlen kötelező érték van: a Postgres connection string (jelszóval), ezt nem szabad a
-repóba írni. Megadható a SUPABASE_DB_URL környezeti változóval vagy a --db-url kapcsolóval.
+repóba írni. Megadható a DATABASE_URL környezeti változóval (Render ezt automatikusan adja),
+a SUPABASE_DB_URL-lel vagy a --db-url kapcsolóval.
 
 Kapcsolók (mind opcionális):
   --force          akkor is importál, ha a feed nem változott
@@ -20,6 +21,7 @@ import io
 import os
 import sys
 import tempfile
+from pathlib import Path
 import urllib.error
 import urllib.request
 import zipfile
@@ -27,12 +29,13 @@ import zipfile
 import psycopg
 
 DEFAULT_URL = "https://gtfs.kti.hu/public-gtfs/volanbusz_gtfs.zip"
-DEFAULT_PREFIX = "Nyíregyháza"
+DEFAULT_PREFIX = "Kisvárda"
+SCHEMA = "kisvarda"  # a város Postgres-sémája (a sql/ mappa hozza létre)
 
 
 def parse_args():
     ap = argparse.ArgumentParser(description="Volánbusz GTFS import")
-    ap.add_argument("--db-url", default=os.environ.get("SUPABASE_DB_URL"))
+    ap.add_argument("--db-url", default=os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL"))
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--file")
     ap.add_argument("--url", default=DEFAULT_URL)
@@ -42,14 +45,22 @@ def parse_args():
 
 ARGS = parse_args()
 if not ARGS.db_url:
-    sys.exit("Hiányzik a Postgres connection string: SUPABASE_DB_URL vagy --db-url.")
+    sys.exit("Hiányzik a Postgres connection string: DATABASE_URL (vagy SUPABASE_DB_URL) vagy --db-url.")
 DB_URL, GTFS_URL, GTFS_FILE, FORCE = ARGS.db_url, ARGS.url, ARGS.file, ARGS.force
 PREFIXES = [p.strip().lower() for p in ARGS.prefix.split(";") if p.strip()]
 
 
+def ensure_schema():
+    """Lefuttatja a sql/*.sql fájlokat sorrendben (idempotensek), így nem kell kézzel migrálni."""
+    sql_dir = Path(__file__).resolve().parent.parent / "sql"
+    with psycopg.connect(DB_URL) as conn:
+        for f in sorted(sql_dir.glob("*.sql")):
+            conn.execute(f.read_text(encoding="utf-8"))
+
+
 def get_meta() -> dict:
     with psycopg.connect(DB_URL) as conn, conn.cursor() as cur:
-        cur.execute("select key, value from public.import_meta")
+        cur.execute(f"select key, value from {SCHEMA}.import_meta")
         return dict(cur.fetchall())
 
 
@@ -104,6 +115,7 @@ def iso_date(s: str) -> str:
 
 
 def main():
+    ensure_schema()
     z, new_meta = open_zip(get_meta())
     if z is None:
         print("A feed nem változott az utolsó import óta, nincs teendő.")
@@ -161,14 +173,14 @@ def main():
 
     # Egy tranzakcióban cseréljük az adatot: közben az olvasók a régit látják
     with psycopg.connect(DB_URL) as conn, conn.cursor() as cur:
-        cur.execute("truncate public.stops, public.routes, public.trips, public.stop_times, "
-                    "public.calendar, public.calendar_dates")
+        cur.execute(f"truncate {SCHEMA}.stops, {SCHEMA}.routes, {SCHEMA}.trips, {SCHEMA}.stop_times, "
+                    f"{SCHEMA}.calendar, {SCHEMA}.calendar_dates")
         for k, v in new_meta.items():
-            cur.execute("insert into public.import_meta (key, value) values (%s, %s) "
+            cur.execute(f"insert into {SCHEMA}.import_meta (key, value) values (%s, %s) "
                         "on conflict (key) do update set value = excluded.value", (k, v))
 
         def copy(table, cols, data):
-            with cur.copy(f"copy public.{table} ({cols}) from stdin") as cp:
+            with cur.copy(f"copy {SCHEMA}.{table} ({cols}) from stdin") as cp:
                 for row in data:
                     cp.write_row(row)
 

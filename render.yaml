@@ -1,6 +1,9 @@
-# Render Blueprint – EMESE API
-# Dashboard: New → Blueprint → ezt a repo-t / emese_render mappát
+# Render Blueprint – EMESE API (Kisvárda + Nyíregyháza)
+# Dashboard: New → Blueprint → ez a repó (a render.yaml a gyökérben van)
 # https://render.com/docs/blueprint-spec
+#
+# Egy közös (ingyenes) Postgres van, a városok külön sémában tárolódnak:
+#   Kisvarda/  -> kisvarda séma,  Nyiregyhaza/ -> nyiregyhaza séma
 
 databases:
   - name: emese-db
@@ -9,11 +12,47 @@ databases:
     user: emese
 
 services:
+  # ---------- Kisvárda ----------
   - type: web
-    name: emese-api
+    name: emese-api-kisvarda
     runtime: python
     plan: free
-    rootDir: emese_render
+    rootDir: Kisvarda
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: emese-db
+          property: connectionString
+      - key: EMESE_CITY
+        value: Kisvarda
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+  # Opcionális: GTFS frissítés 3 naponta (Render Cron – fizetős/korlátozott free-en)
+  - type: cron
+    name: emese-gtfs-import-kisvarda
+    runtime: python
+    plan: free
+    rootDir: Kisvarda
+    schedule: "30 2 */3 * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python scripts/import_gtfs.py
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: emese-db
+          property: connectionString
+      - key: PYTHON_VERSION
+        value: "3.12"
+
+  # ---------- Nyíregyháza ----------
+  - type: web
+    name: emese-api-nyiregyhaza
+    runtime: python
+    plan: free
+    rootDir: Nyiregyhaza
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app:app --host 0.0.0.0 --port $PORT
     envVars:
@@ -26,17 +65,16 @@ services:
       - key: PYTHON_VERSION
         value: "3.12"
 
-  # Opcionális: napi GTFS frissítés (Render Cron – fizetős/korlátozott free-en)
   - type: cron
-    name: emese-gtfs-import
+    name: emese-gtfs-import-nyiregyhaza
     runtime: python
     plan: free
-    rootDir: emese_render
-    schedule: "0 4 * * *"
+    rootDir: Nyiregyhaza
+    schedule: "30 2 */3 * *"
     buildCommand: pip install -r requirements.txt
-    startCommand: python scripts/import_gtfs.py --prefix "Nyíregyháza"
+    startCommand: python scripts/import_gtfs.py
     envVars:
-      - key: SUPABASE_DB_URL
+      - key: DATABASE_URL
         fromDatabase:
           name: emese-db
           property: connectionString

@@ -16,6 +16,7 @@ Kompatibilis path-ok:
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -28,6 +29,9 @@ from fastapi.responses import JSONResponse
 TZ = ZoneInfo("Europe/Budapest")
 DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("SUPABASE_DB_URL") or ""
 CITY = os.environ.get("EMESE_CITY", "Nyiregyhaza")
+SCHEMA = CITY.lower()  # a város Postgres-sémája (az importer hozza létre a sql/ fájlokból)
+if not re.fullmatch(r"[a-z_][a-z0-9_]*", SCHEMA):
+    raise RuntimeError(f"Érvénytelen EMESE_CITY: {CITY}")
 
 app = FastAPI(title="EMESE API", version="1.0.0")
 app.add_middleware(
@@ -84,7 +88,7 @@ def present(row: dict[str, Any], at: datetime) -> dict[str, Any]:
 
 def find_stops(q: str) -> list[dict[str, str]]:
     with db() as conn, conn.cursor() as cur:
-        cur.execute("select stop_id, stop_name from public.find_stops(%s)", (q,))
+        cur.execute(f"select stop_id, stop_name from {SCHEMA}.find_stops(%s)", (q,))
         return [{"stop_id": a, "stop_name": b} for a, b in cur.fetchall()]
 
 
@@ -110,10 +114,10 @@ def resolve_stop(q: str) -> tuple[str, list[str]]:
 def stop_events(ids: list[str], at: datetime, back_min: int, fwd_min: int) -> list[dict]:
     with db() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             select service_date, trip_id, route, headsign, stop_id, stop_name,
                    stop_sequence, scheduled_arrival, scheduled_departure, is_last_stop
-            from public.stop_events(%s, %s, %s, %s)
+            from {SCHEMA}.stop_events(%s, %s, %s, %s)
             """,
             (ids, at, back_min, fwd_min),
         )
@@ -214,10 +218,10 @@ def eta(
     at_dt = parse_at(at)
     with db() as conn, conn.cursor() as cur:
         cur.execute(
-            """
+            f"""
             select trip_id, service_date, route, headsign, status, prev_stop, next_stop,
                    progress, scheduled_arrival, eta, seconds_until
-            from public.trip_eta(%s, %s::date, %s, %s, %s)
+            from {SCHEMA}.trip_eta(%s, %s::date, %s, %s, %s)
             """,
             (trip, date, stop, at_dt, delay_sec),
         )

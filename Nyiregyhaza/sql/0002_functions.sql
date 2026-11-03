@@ -1,30 +1,30 @@
 -- EMESE: lekérdező függvények. Minden időt Europe/Budapest szerint értelmezünk.
 
 -- Mely service_id-k aktívak az adott napon (calendar + calendar_dates kivételek)
-create or replace function public.active_services(p_date date)
+create or replace function nyiregyhaza.active_services(p_date date)
 returns table (service_id text)
 language sql stable as $$
   select c.service_id
-  from public.calendar c
+  from nyiregyhaza.calendar c
   where p_date between c.start_date and c.end_date
     and (case extract(isodow from p_date)::int
            when 1 then c.monday   when 2 then c.tuesday  when 3 then c.wednesday
            when 4 then c.thursday when 5 then c.friday   when 6 then c.saturday
            else c.sunday end) = 1
-    and not exists (select 1 from public.calendar_dates x
+    and not exists (select 1 from nyiregyhaza.calendar_dates x
                     where x.service_id = c.service_id and x.date = p_date and x.exception_type = 2)
   union
   select x.service_id
-  from public.calendar_dates x
+  from nyiregyhaza.calendar_dates x
   where x.date = p_date and x.exception_type = 1
 $$;
 
 -- Megálló keresése azonosító vagy névrészlet alapján
-create or replace function public.find_stops(p_q text)
+create or replace function nyiregyhaza.find_stops(p_q text)
 returns table (stop_id text, stop_name text)
 language sql stable as $$
   select s.stop_id, s.stop_name
-  from public.stops s
+  from nyiregyhaza.stops s
   where s.stop_id = p_q or s.stop_name ilike '%' || p_q || '%'
   order by (lower(s.stop_name) = lower(p_q)) desc, s.stop_name, s.stop_id
   limit 50
@@ -32,7 +32,7 @@ $$;
 
 -- Egy megálló(k) menetrend szerinti eseményei a [p_at - back, p_at + fwd] ablakban.
 -- A tegnapi/mai/holnapi service day-t is vizsgálja (éjfél utáni járatok miatt).
-create or replace function public.stop_events(
+create or replace function nyiregyhaza.stop_events(
   p_stop_ids text[],
   p_at       timestamptz default now(),
   p_back_min integer     default 120,
@@ -62,14 +62,14 @@ language sql stable as $$
            st.stop_sequence,
            (dd.service_date::timestamp + make_interval(secs => st.arrival_sec))   at time zone 'Europe/Budapest' as scheduled_arrival,
            (dd.service_date::timestamp + make_interval(secs => st.departure_sec)) at time zone 'Europe/Budapest' as scheduled_departure,
-           not exists (select 1 from public.stop_times x
+           not exists (select 1 from nyiregyhaza.stop_times x
                        where x.trip_id = st.trip_id and x.stop_sequence > st.stop_sequence) as is_last_stop
     from days dd
-    cross join lateral public.active_services(dd.service_date) a
-    join public.trips t       on t.service_id = a.service_id
-    join public.routes r      on r.route_id   = t.route_id
-    join public.stop_times st on st.trip_id   = t.trip_id
-    join public.stops s       on s.stop_id    = st.stop_id
+    cross join lateral nyiregyhaza.active_services(dd.service_date) a
+    join nyiregyhaza.trips t       on t.service_id = a.service_id
+    join nyiregyhaza.routes r      on r.route_id   = t.route_id
+    join nyiregyhaza.stop_times st on st.trip_id   = t.trip_id
+    join nyiregyhaza.stops s       on s.stop_id    = st.stop_id
     where st.stop_id = any (p_stop_ids)
   )
   select * from ev
@@ -80,7 +80,7 @@ $$;
 
 -- Egy járat becsült érkezése egy megállóba + hol tart most.
 -- p_delay_sec: opcionális késés (pozitív = késik); a GTFS-ben nincs valós idejű adat.
-create or replace function public.trip_eta(
+create or replace function nyiregyhaza.trip_eta(
   p_trip_id      text,
   p_service_date date,
   p_stop_id      text,
@@ -97,8 +97,8 @@ language sql stable as $$
     select st.stop_sequence, st.stop_id, s.stop_name,
            (p_service_date::timestamp + make_interval(secs => st.arrival_sec))   at time zone 'Europe/Budapest' as arr,
            (p_service_date::timestamp + make_interval(secs => st.departure_sec)) at time zone 'Europe/Budapest' as dep
-    from public.stop_times st
-    join public.stops s on s.stop_id = st.stop_id
+    from nyiregyhaza.stop_times st
+    join nyiregyhaza.stops s on s.stop_id = st.stop_id
     where st.trip_id = p_trip_id
   ),
   eff as (select p_at - make_interval(secs => p_delay_sec) as ts),
@@ -121,17 +121,11 @@ language sql stable as $$
          tgt.arr,
          tgt.arr + make_interval(secs => p_delay_sec),
          extract(epoch from (tgt.arr + make_interval(secs => p_delay_sec) - p_at))::integer
-  from public.trips t
-  join public.routes r on r.route_id = t.route_id
+  from nyiregyhaza.trips t
+  join nyiregyhaza.routes r on r.route_id = t.route_id
   cross join eff
   left join prv on true
   left join nxt on true
   left join tgt on true
   where t.trip_id = p_trip_id
 $$;
-
--- A függvényeket csak az Edge Function (service_role) hívhatja
-revoke execute on function public.active_services(date)                              from public, anon, authenticated;
-revoke execute on function public.find_stops(text)                                   from public, anon, authenticated;
-revoke execute on function public.stop_events(text[], timestamptz, integer, integer) from public, anon, authenticated;
-revoke execute on function public.trip_eta(text, date, text, timestamptz, integer)   from public, anon, authenticated;

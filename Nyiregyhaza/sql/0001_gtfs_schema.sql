@@ -1,21 +1,24 @@
+-- A(z) Nyíregyháza város adatai a(z) nyiregyhaza sémában vannak (egy Postgres, városonként külön séma).
+create schema if not exists nyiregyhaza;
+
 -- EMESE: Volánbusz GTFS séma (a Nyíregyháza környékére szűrt adathalmazhoz)
 -- Az időket a service day 00:00-jától számolt másodpercben tároljuk, mert a GTFS
 -- 24:00 utáni időket is használ (pl. 25:10:00 = másnap 01:10).
 
-create table if not exists public.stops (
+create table if not exists nyiregyhaza.stops (
   stop_id   text primary key,
   stop_name text not null,
   stop_lat  double precision,
   stop_lon  double precision
 );
 
-create table if not exists public.routes (
+create table if not exists nyiregyhaza.routes (
   route_id         text primary key,
   route_short_name text,
   route_long_name  text
 );
 
-create table if not exists public.trips (
+create table if not exists nyiregyhaza.trips (
   trip_id       text primary key,
   route_id      text not null,
   service_id    text not null,
@@ -23,7 +26,7 @@ create table if not exists public.trips (
   direction_id  smallint
 );
 
-create table if not exists public.stop_times (
+create table if not exists nyiregyhaza.stop_times (
   trip_id       text    not null,
   stop_sequence integer not null,
   stop_id       text    not null,
@@ -31,10 +34,10 @@ create table if not exists public.stop_times (
   departure_sec integer not null,
   primary key (trip_id, stop_sequence)
 );
-create index if not exists stop_times_stop_idx on public.stop_times (stop_id, departure_sec);
-create index if not exists trips_service_idx   on public.trips (service_id);
+create index if not exists stop_times_stop_idx on nyiregyhaza.stop_times (stop_id, departure_sec);
+create index if not exists trips_service_idx   on nyiregyhaza.trips (service_id);
 
-create table if not exists public.calendar (
+create table if not exists nyiregyhaza.calendar (
   service_id text primary key,
   monday smallint not null, tuesday smallint not null, wednesday smallint not null,
   thursday smallint not null, friday smallint not null, saturday smallint not null,
@@ -43,17 +46,9 @@ create table if not exists public.calendar (
   end_date   date not null
 );
 
-create table if not exists public.calendar_dates (
+create table if not exists nyiregyhaza.calendar_dates (
   service_id     text     not null,
   date           date     not null,
   exception_type smallint not null,  -- 1 = hozzáadva, 2 = kivéve
   primary key (service_id, date)
 );
-
--- Közvetlen (anon) hozzáférés tiltva: csak az Edge Function (service role) olvassa.
-alter table public.stops          enable row level security;
-alter table public.routes         enable row level security;
-alter table public.trips          enable row level security;
-alter table public.stop_times     enable row level security;
-alter table public.calendar       enable row level security;
-alter table public.calendar_dates enable row level security;
